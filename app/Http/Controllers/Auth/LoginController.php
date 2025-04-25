@@ -3,13 +3,12 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Foundation\Auth\AuthenticatesUsers;
+use App\Providers\RouteServiceProvider;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class LoginController extends Controller
 {
-    use AuthenticatesUsers;
-
     /**
      * Hová irányítsuk sikeres bejelentkezés után.
      *
@@ -24,38 +23,70 @@ class LoginController extends Controller
      */
     public function __construct()
     {
-        $this->middleware('guest')->except('logout');
+        // Middleware a route-nál vagy a kontrollerben definiáljuk, nem itt
     }
 
     /**
-     * A felhasználónév mező megadása.
+     * Bejelentkezési űrlap megjelenítése.
      *
-     * @return string
+     * @return \Illuminate\View\View
      */
-    public function username()
+    public function showLoginForm()
     {
-        return 'username';
+        return view('auth.login');
     }
 
     /**
-     * Sikeres bejelentkezés utáni teendők.
+     * Bejelentkezés kezelése.
      *
      * @param  \Illuminate\Http\Request  $request
-     * @param  mixed  $user
-     * @return \Illuminate\Http\Response
+     * @return \Illuminate\Http\RedirectResponse
      */
-    protected function authenticated(Request $request, $user)
+    public function login(Request $request)
     {
-        if ($user->is_admin) {
-            return redirect()->intended($this->redirectTo);
+        $request->validate([
+            'username' => 'required|string',
+            'password' => 'required|string',
+        ]);
+
+        $credentials = $request->only('username', 'password');
+        $remember = $request->filled('remember');
+
+        if (Auth::attempt($credentials, $remember)) {
+            $request->session()->regenerate();
+
+            // Ellenőrizzük, hogy admin-e
+            if (Auth::user()->is_admin) {
+                return redirect()->intended($this->redirectTo);
+            }
+
+            // Ha nem admin, akkor kijelentkeztetjük
+            Auth::logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            return back()->withErrors([
+                'username' => __('Csak adminisztrátorok jelentkezhetnek be.'),
+            ]);
         }
 
-        // Ha nem admin, akkor kijelentkeztetjük
-        $this->guard()->logout();
-        $request->session()->invalidate();
-
         return back()->withErrors([
-            'username' => __('Csak adminisztrátorok jelentkezhetnek be.'),
-        ]);
+            'username' => __('A megadott adatok érvénytelenek.'),
+        ])->withInput($request->except('password'));
+    }
+
+    /**
+     * Kijelentkezés kezelése.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\RedirectResponse
+     */
+    public function logout(Request $request)
+    {
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect('/');
     }
 }
